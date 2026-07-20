@@ -619,6 +619,28 @@ class TestToolNamePreservation(unittest.TestCase):
                     f"_saved_tool_names leaked back into wrong scope: {exc}"
                 )
 
+    def test_build_child_agent_disables_compression(self):
+        parent = _make_mock_parent(depth=0)
+
+        with patch("run_agent.AIAgent") as MockAgent:
+            child = MagicMock()
+            child.compression_enabled = True
+            MockAgent.return_value = child
+
+            result = _build_child_agent(
+                task_index=0,
+                goal="compression regression check",
+                context=None,
+                toolsets=None,
+                model=None,
+                max_iterations=10,
+                parent_agent=parent,
+                task_count=1,
+            )
+
+        self.assertIs(result, child)
+        self.assertIs(child.compression_enabled, False)
+
     def test_build_child_agent_ignores_acp_command_when_binary_missing(self):
         """Stale delegation.command config must not force ACP subprocess mode."""
         parent = _make_mock_parent(depth=0)

@@ -1432,6 +1432,9 @@ def _build_child_agent(
     )
     if child_pool is not None:
         child._credential_pool = child_pool
+    # Delegate models may have smaller context windows than their parent.
+    # Inheriting the parent's threshold can cause repeated compression loops.
+    child.compression_enabled = False
 
     # Register child for interrupt propagation
     if hasattr(parent_agent, "_active_children"):
