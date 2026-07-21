@@ -1700,6 +1700,64 @@ class TestRunJobSessionPersistence:
             "heartbeat-job", expected_owner="owner-token"
         )
 
+    def test_run_job_enforces_per_job_wall_clock_limit(
+        self, tmp_path, monkeypatch
+    ):
+        """A job-specific hard limit must stop an active-but-never-ending run."""
+        job = {
+            "id": "wall-limit-job",
+            "name": "wall-limit",
+            "prompt": "hello",
+            "max_runtime_seconds": 1,
+        }
+        fake_db = MagicMock()
+        interrupted = []
+
+        class FakeAgent:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def run_conversation(self, *args, **kwargs):
+                raise AssertionError("the fake future owns execution")
+
+            def interrupt(self, reason):
+                interrupted.append(reason)
+
+        fake_future = MagicMock()
+        fake_pool = MagicMock()
+        fake_pool.submit.return_value = fake_future
+
+        with patch("cron.scheduler._hermes_home", tmp_path), \
+             patch("hermes_state.SessionDB", return_value=fake_db), \
+             patch(
+                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 return_value={
+                     "api_key": "***",
+                     "base_url": "https://example.invalid/v1",
+                     "provider": "openrouter",
+                     "api_mode": "chat_completions",
+                 },
+             ), \
+             patch("run_agent.AIAgent", FakeAgent), \
+             patch(
+                 "cron.scheduler.concurrent.futures.ThreadPoolExecutor",
+                 return_value=fake_pool,
+             ), \
+             patch(
+                 "cron.scheduler.concurrent.futures.wait",
+                 return_value=(set(), set()),
+             ), \
+             patch(
+                 "cron.scheduler.time.monotonic",
+                 side_effect=[0.0, 0.0, 0.0, 2.0, 2.0, 2.0],
+             ):
+            success, _output, final_response, error = run_job(job)
+
+        assert success is False
+        assert final_response == ""
+        assert "exceeded total runtime limit" in error
+        assert interrupted == ["Cron job exceeded total runtime limit"]
+
     def test_run_job_resets_secret_source_cache_before_reload(self, tmp_path, monkeypatch):
         """Each run must clear the secret-source cache before re-reading the
         env, so a long-running gateway re-resolves Bitwarden/BSM-backed secrets
