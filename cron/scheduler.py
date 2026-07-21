@@ -2865,6 +2865,20 @@ def run_job(
     if script_path:
         prerun_script = _run_job_script_with_claim_heartbeat(job, script_path)
         _ran_ok, _script_output = prerun_script
+        if not _ran_ok:
+            logger.error(
+                "Job '%s' (ID: %s): pre-run script failed; agent will not run",
+                job_name, job_id,
+            )
+            error = f"Pre-run script failed: {_script_output}"
+            failed_doc = (
+                f"# Cron Job: {job_name} (FAILED)\n\n"
+                f"**Job ID:** {job_id}\n"
+                f"**Run Time:** {_hermes_now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                "## Pre-run Script Error\n\n"
+                f"```\n{_script_output}\n```\n"
+            )
+            return False, failed_doc, "", error
         if _ran_ok and not _parse_wake_gate(_script_output):
             logger.info(
                 "Job '%s' (ID: %s): wakeAgent=false, skipping agent run",
@@ -3779,6 +3793,16 @@ def run_one_job(job: dict, *, adapters=None, loop=None, verbose: bool = False) -
                 job, defer_agent_teardown=_deferred_agents
             )
         except BaseException:
+            post_script = job.get("post_script")
+            if post_script:
+                post_ok, post_output = _run_job_script_with_claim_heartbeat(
+                    job, post_script
+                )
+                if not post_ok:
+                    logger.error(
+                        "Job '%s': post-run script also failed after executor error: %s",
+                        job["id"], post_output,
+                    )
             # run_job's finally still hands back the agent when it raises; tear
             # it down here so a failed run never leaks its async resources
             # (#10200), then re-raise into the outer handler. BaseException
@@ -3787,6 +3811,20 @@ def run_one_job(job: dict, *, adapters=None, loop=None, verbose: bool = False) -
             for _deferred_agent in _deferred_agents:
                 _teardown_cron_agent(_deferred_agent, job["id"])
             raise
+        else:
+            post_script = job.get("post_script")
+            if post_script:
+                post_ok, post_output = _run_job_script_with_claim_heartbeat(
+                    job, post_script
+                )
+                if not post_ok:
+                    success = False
+                    error = f"Post-run script failed: {post_output}"
+                    output = (
+                        f"{output.rstrip()}\n\n"
+                        "## Post-run Script Error\n\n"
+                        f"```\n{post_output}\n```\n"
+                    )
         finally:
             reset_secret_scope(_scope_token)
 

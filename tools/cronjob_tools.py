@@ -672,6 +672,7 @@ def cronjob(
     base_url: Optional[str] = None,
     reason: Optional[str] = None,
     script: Optional[str] = None,
+    post_script: Optional[str] = None,
     context_from: Optional[Union[str, List[str]]] = None,
     enabled_toolsets: Optional[List[str]] = None,
     workdir: Optional[str] = None,
@@ -714,6 +715,10 @@ def cronjob(
                 script_error = _validate_cron_script_path(script)
                 if script_error:
                     return tool_error(script_error, success=False)
+            if post_script:
+                post_script_error = _validate_cron_script_path(post_script)
+                if post_script_error:
+                    return tool_error(post_script_error, success=False)
 
             # Reject a model-supplied base_url that would route a named
             # provider's stored credential to an attacker endpoint (F8).
@@ -745,6 +750,7 @@ def cronjob(
                 provider=_normalize_optional_job_value(provider),
                 base_url=_normalize_optional_job_value(base_url, strip_trailing_slash=True),
                 script=_normalize_optional_job_value(script),
+                post_script=_normalize_optional_job_value(post_script),
                 context_from=context_from,
                 enabled_toolsets=enabled_toolsets or None,
                 workdir=_normalize_optional_job_value(workdir),
@@ -901,6 +907,16 @@ def cronjob(
                     if script_error:
                         return tool_error(script_error, success=False)
                 updates["script"] = _normalize_optional_job_value(script) if script else None
+            if post_script is not None:
+                if post_script:
+                    post_script_error = _validate_cron_script_path(post_script)
+                    if post_script_error:
+                        return tool_error(post_script_error, success=False)
+                updates["post_script"] = (
+                    _normalize_optional_job_value(post_script)
+                    if post_script
+                    else None
+                )
             if context_from is not None:
                 # Empty string / empty list clears the field; otherwise validate
                 # each referenced job exists before storing. Normalized to a list

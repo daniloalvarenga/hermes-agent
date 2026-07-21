@@ -100,6 +100,43 @@ def test_run_one_job_failed_job_delivers_error(monkeypatch):
     assert mark == ("mark", "j5", False)
 
 
+def test_run_one_job_runs_post_script_before_mark(monkeypatch):
+    """A configured post script is part of the job's success contract."""
+    calls = _patch_pipeline(monkeypatch)
+
+    def fake_script(job, path):
+        calls.append(("post_script", path))
+        return True, "cleaned"
+
+    monkeypatch.setattr(s, "_run_job_script_with_claim_heartbeat", fake_script)
+
+    s.run_one_job(
+        {"id": "j-post-ok", "name": "t", "post_script": "cleanup.sh"}
+    )
+
+    assert [c[0] for c in calls] == [
+        "run_job", "post_script", "save", "deliver", "mark"
+    ]
+    assert calls[-1] == ("mark", "j-post-ok", True)
+
+
+def test_run_one_job_post_script_failure_marks_job_failed(monkeypatch):
+    """A failed post script must prevent a false-green cron result."""
+    calls = _patch_pipeline(monkeypatch)
+
+    def fake_script(job, path):
+        calls.append(("post_script", path))
+        return False, "cleanup broke"
+
+    monkeypatch.setattr(s, "_run_job_script_with_claim_heartbeat", fake_script)
+
+    s.run_one_job(
+        {"id": "j-post-fail", "name": "t", "post_script": "cleanup.sh"}
+    )
+
+    assert ("mark", "j-post-fail", False) in calls
+
+
 def test_run_one_job_exception_marks_failure(monkeypatch):
     """If run_job raises, the helper marks the run failed and returns False
     rather than propagating."""

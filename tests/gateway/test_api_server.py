@@ -2798,6 +2798,50 @@ class TestConfigIntegration:
         assert Platform.API_SERVER in config.platforms
         assert config.platforms[Platform.API_SERVER].extra.get("key") == "sk-mykey"
 
+    def test_explicit_yaml_false_wins_over_env_key(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.setenv("API_SERVER_KEY", "sk-must-not-enable")
+        monkeypatch.delenv("API_SERVER_ENABLED", raising=False)
+        (tmp_path / "config.yaml").write_text(
+            "platforms:\n"
+            "  api_server:\n"
+            "    enabled: false\n"
+            "    extra:\n"
+            "      port: 8742\n",
+            encoding="utf-8",
+        )
+
+        from gateway.config import load_gateway_config
+
+        config = load_gateway_config()
+        api_server = config.platforms[Platform.API_SERVER]
+        assert api_server.enabled is False
+        assert api_server.extra["key"] == "sk-must-not-enable"
+        assert api_server.extra["port"] == 8742
+
+    def test_true_env_flag_can_reenable_explicit_yaml_false(
+        self, monkeypatch, tmp_path
+    ):
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.setenv("API_SERVER_ENABLED", "true")
+        monkeypatch.setenv("API_SERVER_KEY", "sk-explicit-enable")
+        (tmp_path / "config.yaml").write_text(
+            "platforms:\n"
+            "  api_server:\n"
+            "    enabled: false\n"
+            "    extra:\n"
+            "      port: 8742\n",
+            encoding="utf-8",
+        )
+
+        from gateway.config import load_gateway_config
+
+        config = load_gateway_config()
+        api_server = config.platforms[Platform.API_SERVER]
+        assert api_server.enabled is True
+        assert api_server.extra["key"] == "sk-explicit-enable"
+        assert api_server.extra["port"] == 8742
+
     def test_env_override_port_and_host(self, monkeypatch):
         monkeypatch.setenv("API_SERVER_ENABLED", "true")
         monkeypatch.setenv("API_SERVER_PORT", "9999")
